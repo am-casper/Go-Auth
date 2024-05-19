@@ -30,6 +30,8 @@ var ctx = context.TODO()
 
 func init() {
 	godotenv.Load()
+	var mongoDatabaseName = os.Getenv("MONGO_DATABASE")
+	var mongoCollectionName = os.Getenv("MONGO_COLLECTION")
 	clientOptions := options.Client().ApplyURI(os.Getenv("MONGO_URL"))
 	client, err := mongo.Connect(ctx, clientOptions)
 	if err != nil {
@@ -41,7 +43,7 @@ func init() {
 		log.Fatal(err)
 	}
 
-	usersCollection = client.Database("Go-Auth").Collection("users")
+	usersCollection = client.Database(mongoDatabaseName).Collection(mongoCollectionName)
 }
 
 func filterTasks(filter interface{}) ([]*User, error) {
@@ -118,9 +120,10 @@ func registerUser(c *gin.Context) {
 }
 
 func main() {
+	var port = os.Getenv("PORT")
 	r := gin.Default()
 	r.GET("/users", getUsers)
 	r.POST("/users", registerUser)
-	r.Run(":10000")
-	fmt.Println("Listening to http://localhost:10000/")
+	r.Run(":"+port)
+	fmt.Println("Listening to http://localhost:"+port+"/")
 }
