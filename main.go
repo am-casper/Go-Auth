@@ -1,0 +1,126 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+
+	"github.com/joho/godotenv"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+	// "go.mongodb.org/mongo-driver/mongo/readpref"
+
+	"github.com/gin-gonic/gin"
+
+	"golang.org/x/crypto/bcrypt"
+)
+
+type User struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+	NewsPref string `json:"newsPref"`
+	MoviePref string `json:"moviePref"`
+}
+
+var usersCollection *mongo.Collection
+var ctx = context.TODO()
+
+func init() {
+	godotenv.Load()
+	clientOptions := options.Client().ApplyURI(os.Getenv("MONGO_URL"))
+	client, err := mongo.Connect(ctx, clientOptions)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = client.Ping(ctx, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	usersCollection = client.Database("Go-Auth").Collection("users")
+}
+
+func filterTasks(filter interface{}) ([]*User, error) {
+	// A slice of users for storing the decoded documents
+	var users []*User
+
+	cur, err := usersCollection.Find(ctx, filter)
+	if err != nil {
+		return users, err
+	}
+
+	for cur.Next(ctx) {
+		var u User
+		err := cur.Decode(&u)
+		if err != nil {
+			return users, err
+		}
+
+		users = append(users, &u)
+	}
+
+	if err := cur.Err(); err != nil {
+		return users, err
+	}
+
+  // once exhausted, close the cursor
+	cur.Close(ctx)
+
+	if len(users) == 0 {
+		return users, mongo.ErrNoDocuments
+	}
+
+	return users, nil
+}
+
+func createTask(user *User) error {
+	_, err := usersCollection.InsertOne(ctx, user)
+	return err
+}
+
+func getUsers(c *gin.Context) {
+	filter := bson.D{{}}
+	users, err := filterTasks(filter)
+	if err != nil {
+		panic(err)
+	}
+    c.IndentedJSON(http.StatusOK, users)
+}
+
+func registerUser(c *gin.Context) {
+    var newUser User
+
+    if err := c.BindJSON(&newUser); err != nil {
+		if err.Error() == "json: cannot unmarshal number into Go struct field User.newsPref of type string" {
+			c.IndentedJSON(http.StatusBadRequest, gin.H{"error": "newsPref and moviePref must be a string"})
+		} else {
+			c.IndentedJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		}
+		return
+    }
+
+	var pwd = []byte(newUser.Password)
+	hashedPassword, err := bcrypt.GenerateFromPassword(pwd, bcrypt.DefaultCost)
+    if err != nil {
+        panic(err)
+    }
+	newUser.Password = string(hashedPassword)
+
+	if err := createTask(&newUser); err != nil {
+		c.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err.Error()+" Please Try Again!"})
+	}
+
+    c.IndentedJSON(http.StatusCreated, newUser)
+}
+
+func main() {
+	r := gin.Default()
+	r.GET("/users", getUsers)
+	r.POST("/users", registerUser)
+	r.Run(":10000")
+	fmt.Println("Listening to http://localhost:10000/")
+}
