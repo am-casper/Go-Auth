@@ -127,9 +127,7 @@ func registerUser(c *gin.Context) {
 	// checks for duplicate username
 	filter := bson.D{{Key: "username", Value: newUser.Username}}
 	_, err := filterTasks(filter)
-	log.Println(err)
 	if err != nil {
-		log.Println("yha hai")
 		if err != mongo.ErrNoDocuments {
 			c.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
