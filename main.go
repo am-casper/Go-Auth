@@ -105,6 +105,25 @@ func registerUser(c *gin.Context) {
 		return
     }
 
+	// checks for bad request
+	if newUser.Username == "" || newUser.Password == "" || newUser.NewsPref == "" || newUser.MoviePref == "" {
+		c.IndentedJSON(http.StatusBadRequest, gin.H{"error": "username, password, newsPref and moviePref are required"})
+		return
+	}
+
+	// checks for duplicate username
+	filter := bson.D{{Key: "username", Value: newUser.Username}}
+	_, err := filterTasks(filter)
+	if err != nil {
+		if err != mongo.ErrNoDocuments {
+			c.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	} else {
+		c.IndentedJSON(http.StatusBadRequest, gin.H{"error": "username already exists"})
+		return
+	}
+
 	var pwd = []byte(newUser.Password)
 	hashedPassword, err := bcrypt.GenerateFromPassword(pwd, bcrypt.DefaultCost)
     if err != nil {
