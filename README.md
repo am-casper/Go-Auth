@@ -78,6 +78,6 @@ $ > go run main.go
   
 </table>
 
-The Access Token has a validity of 2 hours, after which the token expires. The client needs to refresh the access token using the refresh token so that the user can again have the access to his data. The validity of the refresh token in 24 hours. 
+The Access Token has a validity of 2 hours, after which the token expires. The client needs to refresh the access token using the refresh token so that the user can again have the access to his data. The validity of the refresh token in 24 hours. I've also implemented **_Refresh Token Rotation_** which helps secure the authentication via JWT as it removes the potential threat of reuse of expired refresh token by a man in the middle.
 
 Have Fun Learning :)
