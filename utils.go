@@ -1,11 +1,12 @@
 package main
 
 import (
-	"github.com/gin-gonic/gin"
-	"go.mongodb.org/mongo-driver/mongo"
-	"github.com/golang-jwt/jwt/v5"
-	"time"
 	"net/http"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 func filterUsers(filter interface{}) ([]*User, error) {
@@ -45,7 +46,7 @@ func createUser(user *User) error {
 	return err
 }
 
-func generateAccessToken(c *gin.Context, username string) (newAccessToken string){
+func generateAccessToken(c *gin.Context, username string) (newAccessToken string) {
 	// Generate JWT access token
 	newAccessTokenClaims := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"sub": username,
@@ -59,7 +60,7 @@ func generateAccessToken(c *gin.Context, username string) (newAccessToken string
 	return newAccessToken
 }
 
-func generateRefreshToken(c *gin.Context, username string) (newRefreshToken string){
+func generateRefreshToken(c *gin.Context, username string) (newRefreshToken string) {
 	// Generate JWT refresh token
 	newRefreshTokenClaims := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"sub": username,
@@ -71,4 +72,13 @@ func generateRefreshToken(c *gin.Context, username string) (newRefreshToken stri
 		return ""
 	}
 	return newRefreshToken
+}
+
+func contains(a string, list []string) bool {
+	for _, b := range list {
+		if b == a {
+			return true
+		}
+	}
+	return false
 }

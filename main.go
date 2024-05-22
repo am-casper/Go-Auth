@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/joho/godotenv"
 	"go.mongodb.org/mongo-driver/bson"
@@ -18,10 +19,12 @@ import (
 )
 
 type User struct {
-	Username  string `json:"username"`
-	Password  string `json:"password"`
-	NewsPref  string `json:"newsPref"`
-	MoviePref string `json:"moviePref"`
+	Username           string   `json:"username"`
+	Password           string   `json:"password"`
+	NewsPref           string   `json:"newsPref"`
+	MoviePref          string   `json:"moviePref"`
+	AccessTokenExpiry  float64  `json:"accessTokenExpiry"`
+	RefreshTokenFamily []string `json:"refreshTokenFamily"`
 }
 
 var usersCollection *mongo.Collection
@@ -132,8 +135,15 @@ func loginUser(c *gin.Context) {
 	// Generate JWT refresh token
 	refreshToken := generateRefreshToken(c, user.Username)
 
-	if accessToken=="" || refreshToken=="" {
-		return 
+	if accessToken == "" || refreshToken == "" {
+		return
+	}
+
+	update := bson.D{{Key: "$set", Value: bson.D{{Key: "accesstokenexpiry", Value: time.Now().Add(time.Hour * 2).Unix()}, {Key: "refreshtokenfamily", Value: append(users[0].RefreshTokenFamily, refreshToken)}}}}
+	_, err = usersCollection.UpdateOne(ctx, filter, update)
+	if err != nil {
+		c.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 
 	c.SetCookie("access-token", accessToken, 3600, "/", "", true, true)
@@ -149,12 +159,12 @@ func getUserInfo(c *gin.Context) {
 		c.String(http.StatusNotFound, "Cookie not found")
 		return
 	}
-	
+
 	// Parse JWT token with claims
 	accessToken, err := jwt.ParseWithClaims(accessTokenCookie, &jwt.MapClaims{}, func(token *jwt.Token) (interface{}, error) {
 		return []byte(accessSecretKey), nil
 	})
-	
+
 	// Handle token parsing errors
 	if err != nil {
 		c.String(http.StatusUnauthorized, "Unauthorized access. Please refresh the token.")
@@ -169,6 +179,7 @@ func getUserInfo(c *gin.Context) {
 	}
 
 	var username, okay = (*claims)["sub"]
+	var expires, _ = (*claims)["exp"].(float64)
 	if !okay {
 		c.IndentedJSON(http.StatusInternalServerError, gin.H{"error": "Error extracting username"})
 		return
@@ -179,7 +190,14 @@ func getUserInfo(c *gin.Context) {
 		c.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.IndentedJSON(http.StatusOK, users[0])
+
+	if expires < users[0].AccessTokenExpiry {
+		c.IndentedJSON(http.StatusUnauthorized, gin.H{"error": "Token expired. Please refresh the token."})
+		return
+	}
+
+	var json = gin.H{"username": users[0].Username, "newsPref": users[0].NewsPref, "moviePref": users[0].MoviePref}
+	c.IndentedJSON(http.StatusOK, json)
 }
 
 func refreshTokenPair(c *gin.Context) {
@@ -212,14 +230,45 @@ func refreshTokenPair(c *gin.Context) {
 		return
 	}
 
+	filter := bson.D{{Key: "username", Value: username}}
+	users, err := filterUsers(filter)
+	if err != nil {
+		c.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if len(users[0].RefreshTokenFamily) == 0 {
+		c.IndentedJSON(http.StatusUnauthorized, gin.H{"error": "Potential security threat. Please login again."})
+		return
+	}
+
+	// Check if the refresh token is in the refresh token family
+	if contains(refreshTokenCookie, users[0].RefreshTokenFamily[:len(users[0].RefreshTokenFamily)-1]) {
+		c.IndentedJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized access. Please login again!"})
+		update := bson.D{{Key: "$set", Value: bson.D{{Key: "accesstokenexpiry", Value: 0}, {Key: "refreshtokenfamily", Value: []string{}}}}} // Reset the refresh token family
+		_, err = usersCollection.UpdateOne(ctx, filter, update)
+		if err != nil {
+			c.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		return
+	}
+
 	// Generate JWT access token
 	newAccessToken := generateAccessToken(c, username.(string))
 
 	// Generate JWT refresh token
 	newRefreshToken := generateRefreshToken(c, username.(string))
 
-	if newAccessToken=="" || newRefreshToken=="" {
-		return 
+	if newAccessToken == "" || newRefreshToken == "" {
+		return
+	}
+
+	update := bson.D{{Key: "$set", Value: bson.D{{Key: "accesstokenexpiry", Value: time.Now().Add(time.Hour * 2).Unix()}, {Key: "refreshtokenfamily", Value: append(users[0].RefreshTokenFamily, newRefreshToken)}}}}
+	_, err = usersCollection.UpdateOne(ctx, filter, update)
+	if err != nil {
+		c.IndentedJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 
 	c.SetCookie("access-token", newAccessToken, 3600, "/", "", true, true)
